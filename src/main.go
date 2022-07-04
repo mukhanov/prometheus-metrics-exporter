@@ -322,9 +322,11 @@ func extractLineData(line string) (string, map[string]string, string) {
 		}
 
 	} else {
-		a := strings.SplitN(line, " ", 2)
+		a := strings.Split(line, " ")
 		metricName = a[0]
-		metricValue = a[1]
+		if len(a) > 1 {
+			metricValue = a[1]
+		}
 	}
 	return metricName, tags, metricValue
 }
