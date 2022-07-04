@@ -145,7 +145,7 @@ func getContainerMetricsEndpointUrl(container types.ContainerJSON) (string, erro
 		ctx = "/metrics"
 	}
 
-	return protocol + "://" + "localhost" + ":" + port + ctx, nil
+	//return protocol + "://" + "localhost" + ":" + port + ctx, nil
 	for _, settings := range container.NetworkSettings.Networks {
 		return protocol + "://" + settings.IPAddress + ":" + port + ctx, nil
 	}
