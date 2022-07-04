@@ -257,6 +257,9 @@ func transformServiceMetricsResponse(containerInfo ContainerInfo, serviceOutput 
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		if len(line) == 0 {
+			continue
+		}
 		switch {
 		case strings.HasPrefix(line, "# HELP"):
 			buffer.WriteString(line)
