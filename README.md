@@ -1,7 +1,7 @@
 # prometheus-metrics-exporter
 
 Aggregates metrics of all running containers on the host and exports them to prometheus through only one endpoint. So
-you don't need to add each container address to scrape config. Metric names are transformed by appending a prefix to
+you don't need to add each container address to scrape config. Metric names are transformed by appending a tag to
 each of them. Container must have label "prometheus.enable=true". 
 
 Example:

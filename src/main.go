@@ -40,7 +40,7 @@ var (
 type (
 	ContainerInfo struct {
 		Id                 string
-		Name               string
+		ContainerName      string
 		ServiceName        string
 		MetricsEndpointUrl string
 	}
@@ -145,7 +145,7 @@ func getContainerMetricsEndpointUrl(container types.ContainerJSON) (string, erro
 		ctx = "/metrics"
 	}
 
-	//return protocol + "://" + "localhost" + ":" + port + ctx
+	return protocol + "://" + "localhost" + ":" + port + ctx, nil
 	for _, settings := range container.NetworkSettings.Networks {
 		return protocol + "://" + settings.IPAddress + ":" + port + ctx, nil
 	}
@@ -167,7 +167,7 @@ func addContainer(container types.ContainerJSON) {
 		containersMap.Store(container.ID, ContainerInfo{
 			Id:                 container.ID,
 			ServiceName:        createServiceName(container),
-			Name:               container.Name,
+			ContainerName:      container.Name,
 			MetricsEndpointUrl: endpointUrl,
 		})
 	}
@@ -197,7 +197,7 @@ func Handle(resp http.ResponseWriter, _ *http.Request) {
 
 			err := readServiceMetrics(ctx, c, responseMap)
 			if err != nil {
-				log.Errorf("Unable to read [containerName:%v;containerId:%v;serviceName:%v] metrics. Error: %v", c.Name, c.Id, c.ServiceName, err)
+				log.Errorf("Unable to read [containerName:%v;containerId:%v;serviceName:%v] metrics. Error: %v", c.ContainerName, c.Id, c.ServiceName, err)
 			}
 		}()
 
@@ -259,16 +259,74 @@ func transformServiceMetricsResponse(containerInfo ContainerInfo, serviceOutput 
 		line := scanner.Text()
 		switch {
 		case strings.HasPrefix(line, "# HELP"):
-			buffer.WriteString("# HELP " + containerInfo.ServiceName + "_" + strings.Split(line, "# HELP ")[1])
+			buffer.WriteString(line)
 		case strings.HasPrefix(line, "# TYPE"):
-			buffer.WriteString("# TYPE " + containerInfo.ServiceName + "_" + strings.Split(line, "# TYPE ")[1])
+			buffer.WriteString(line)
 		default:
-			buffer.WriteString(containerInfo.ServiceName + "_" + line)
+			buffer.WriteString(transformMetricValueLine(containerInfo, line))
 		}
 		buffer.WriteRune('\n')
 	}
 
 	return buffer.Bytes()
+}
+
+func transformMetricValueLine(container ContainerInfo, line string) string {
+
+	metric, tags, value := extractLineData(line)
+
+	tags["service"] = "\"" + container.ServiceName + "\""
+	tags["container"] = "\"" + container.ContainerName + "\""
+
+	return createLine(metric, tags, value)
+}
+
+func createLine(metric string, tags map[string]string, value string) string {
+	res := metric + "{"
+
+	first := true
+	for k, v := range tags {
+		if !first {
+			res += ","
+		} else {
+			first = false
+		}
+		res += k + "=" + v
+	}
+
+	res += "} " + value
+	return res
+}
+
+func extractLineData(line string) (string, map[string]string, string) {
+
+	metricValue := ""
+	metricName := ""
+	tags := make(map[string]string)
+
+	if strings.Contains(line, "{") {
+		a := strings.SplitN(line, "} ", 2)
+		metricValue = a[1]
+
+		nameAndTags := strings.Split(a[0], "{")
+
+		metricName = nameAndTags[0]
+
+		labelsString := nameAndTags[1]
+
+		labelsWithValues := strings.Split(labelsString, ",")
+
+		for _, labelWithValue := range labelsWithValues {
+			kv := strings.Split(labelWithValue, "=")
+			tags[kv[0]] = kv[1]
+		}
+
+	} else {
+		a := strings.SplitN(line, " ", 2)
+		metricName = a[0]
+		metricValue = a[1]
+	}
+	return metricName, tags, metricValue
 }
 
 func createServiceName(container types.ContainerJSON) string {
