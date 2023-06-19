@@ -321,7 +321,9 @@ func extractLineData(line string) (string, map[string]string, string) {
 
 		for _, labelWithValue := range labelsWithValues {
 			kv := strings.Split(labelWithValue, "=")
-			tags[kv[0]] = kv[1]
+			if len(kv) > 1 {
+				tags[kv[0]] = kv[1]
+			}
 		}
 
 	} else {
