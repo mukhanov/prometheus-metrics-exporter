@@ -32,6 +32,7 @@ var (
 
 	removeAllSlashesRE     *regexp.Regexp
 	underscoreEverythingRE *regexp.Regexp
+	labelNameRE            *regexp.Regexp
 
 	networkAliasNotFoundError        = errors.New("network alias not found")
 	invalidEndpointResponseCodeError = errors.New("invalid endpoint response code")
@@ -60,8 +61,9 @@ func init() {
 		metricsReadTimeout = defaultMetricsReadTimeout
 	}
 
-	removeAllSlashesRE, _ = regexp.Compile("[/]*")
-	underscoreEverythingRE, _ = regexp.Compile("[\\W]+")
+	removeAllSlashesRE = regexp.MustCompile("[/]*")
+	underscoreEverythingRE = regexp.MustCompile("[\\W]+")
+	labelNameRE = regexp.MustCompile("[a-zA-Z_]+=")
 
 	httpClient = &http.Client{}
 
@@ -303,35 +305,47 @@ func createLine(metric string, tags map[string]string, value string) string {
 
 func extractLineData(line string) (string, map[string]string, string) {
 
+	if strings.Contains(line, "{") {
+		return extractMetricWithLabels(line)
+	} else {
+		return extractMetricWithoutLabels(line)
+	}
+}
+
+func extractMetricWithoutLabels(line string) (string, map[string]string, string) {
+	a := strings.Split(line, " ")
+	metricName := a[0]
 	metricValue := ""
-	metricName := ""
+	if len(a) > 1 {
+		metricValue = a[1]
+	}
+	return metricName, map[string]string{}, metricValue
+}
+
+func extractMetricWithLabels(line string) (string, map[string]string, string) {
+
+	a := strings.SplitN(line, "} ", 2)
+	metricValue := a[1]
+
+	nameAndTags := strings.Split(a[0], "{")
+	metricName := nameAndTags[0]
+	labelsString := nameAndTags[1]
+
 	tags := make(map[string]string)
 
-	if strings.Contains(line, "{") {
-		a := strings.SplitN(line, "} ", 2)
-		metricValue = a[1]
+	labelsValues := labelNameRE.Split(labelsString, -1)
+	labelNames := labelNameRE.FindAllString(labelsString, -1)
 
-		nameAndTags := strings.Split(a[0], "{")
+	for i := 0; i < len(labelNames); i++ {
+		name := strings.Split(labelNames[i], "=")[0]
+		value := labelsValues[i+1]
 
-		metricName = nameAndTags[0]
-
-		labelsString := nameAndTags[1]
-
-		labelsWithValues := strings.Split(labelsString, ",")
-
-		for _, labelWithValue := range labelsWithValues {
-			kv := strings.Split(labelWithValue, "=")
-			if len(kv) > 1 {
-				tags[kv[0]] = kv[1]
-			}
+		lastCommaInValue := strings.LastIndex(value, ",")
+		if lastCommaInValue > 0 {
+			value = value[:lastCommaInValue]
 		}
 
-	} else {
-		a := strings.Split(line, " ")
-		metricName = a[0]
-		if len(a) > 1 {
-			metricValue = a[1]
-		}
+		tags[name] = value
 	}
 	return metricName, tags, metricValue
 }
