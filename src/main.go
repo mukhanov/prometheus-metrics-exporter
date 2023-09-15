@@ -32,7 +32,6 @@ var (
 
 	removeAllSlashesRE     *regexp.Regexp
 	underscoreEverythingRE *regexp.Regexp
-	labelNameRE            *regexp.Regexp
 
 	networkAliasNotFoundError        = errors.New("network alias not found")
 	invalidEndpointResponseCodeError = errors.New("invalid endpoint response code")
@@ -63,7 +62,6 @@ func init() {
 
 	removeAllSlashesRE = regexp.MustCompile("[/]*")
 	underscoreEverythingRE = regexp.MustCompile("[\\W]+")
-	labelNameRE = regexp.MustCompile("[a-zA-Z_]+=")
 
 	httpClient = &http.Client{}
 
@@ -277,77 +275,34 @@ func transformServiceMetricsResponse(containerInfo ContainerInfo, serviceOutput 
 }
 
 func transformMetricValueLine(container ContainerInfo, line string) string {
+	var buffer bytes.Buffer
 
-	metric, tags, value := extractLineData(line)
+	insertAttributes := "service=\"" + container.ServiceName + "\",container=\"" + container.ContainerName + "\""
 
-	tags["service"] = "\"" + container.ServiceName + "\""
-	tags["container"] = "\"" + container.ContainerName + "\""
+	for i, c := range line {
 
-	return createLine(metric, tags, value)
-}
-
-func createLine(metric string, tags map[string]string, value string) string {
-	res := metric + "{"
-
-	first := true
-	for k, v := range tags {
-		if !first {
-			res += ","
-		} else {
-			first = false
-		}
-		res += k + "=" + v
-	}
-
-	res += "} " + value
-	return res
-}
-
-func extractLineData(line string) (string, map[string]string, string) {
-
-	if strings.Contains(line, "{") {
-		return extractMetricWithLabels(line)
-	} else {
-		return extractMetricWithoutLabels(line)
-	}
-}
-
-func extractMetricWithoutLabels(line string) (string, map[string]string, string) {
-	a := strings.Split(line, " ")
-	metricName := a[0]
-	metricValue := ""
-	if len(a) > 1 {
-		metricValue = a[1]
-	}
-	return metricName, map[string]string{}, metricValue
-}
-
-func extractMetricWithLabels(line string) (string, map[string]string, string) {
-
-	a := strings.SplitN(line, "} ", 2)
-	metricValue := a[1]
-
-	nameAndTags := strings.Split(a[0], "{")
-	metricName := nameAndTags[0]
-	labelsString := nameAndTags[1]
-
-	tags := make(map[string]string)
-
-	labelsValues := labelNameRE.Split(labelsString, -1)
-	labelNames := labelNameRE.FindAllString(labelsString, -1)
-
-	for i := 0; i < len(labelNames); i++ {
-		name := strings.Split(labelNames[i], "=")[0]
-		value := labelsValues[i+1]
-
-		lastCommaInValue := strings.LastIndex(value, ",")
-		if lastCommaInValue > 0 {
-			value = value[:lastCommaInValue]
+		switch c {
+		case ' ':
+			buffer.WriteRune('{')
+			buffer.WriteString(insertAttributes)
+			buffer.WriteRune('}')
+			buffer.WriteString(line[i:])
+			return buffer.String()
+		case '{':
+			buffer.WriteRune('{')
+			buffer.WriteString(insertAttributes)
+			buffer.WriteRune(',')
+			buffer.WriteString(line[i+1:])
+			return buffer.String()
+		default:
+			buffer.WriteRune(c)
 		}
 
-		tags[name] = value
 	}
-	return metricName, tags, metricValue
+
+	log.Errorf("Invalid line: %v", line)
+
+	return buffer.String()
 }
 
 func createServiceName(container types.ContainerJSON) string {
